@@ -1,12 +1,20 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import wbdata
-import datetime
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
+import datetime
 
+# Matplotlib import wrapped in a safe block
+try:
+    import matplotlib.pyplot as plt
+except Exception as e:
+    st.warning("Matplotlib could not be loaded. Graphs will not display.")
+    plt = None
+
+import wbdata
+
+# App config
 st.set_page_config(page_title="Latin America Regression Explorer", layout="wide")
 
 latin_countries = {
@@ -87,7 +95,10 @@ degree = st.slider("Polynomial Regression Degree:", 3, 8, 3)
 increment = st.slider("Graph increments (years):", 1, 10, 1)
 extrapolate_years = st.slider("Extrapolate into the future (years):", 0, 50, 10)
 
-fig, ax = plt.subplots(figsize=(10, 6))
+if plt:
+    fig, ax = plt.subplots(figsize=(10, 6))
+else:
+    ax = None
 
 for c, df in frames.items():
     X = df["year"].values.reshape(-1, 1)
@@ -100,8 +111,9 @@ for c, df in frames.items():
     years = np.arange(df["year"].min(), df["year"].max() + extrapolate_years, increment).reshape(-1, 1)
     preds = model.predict(poly.transform(years))
 
-    ax.scatter(df["year"], y, label=f"{c} data")
-    ax.plot(years, preds, label=f"{c} regression")
+    if plt:
+        ax.scatter(df["year"], y, label=f"{c} data")
+        ax.plot(years, preds, label=f"{c} regression")
 
     # Display equation
     coefs = model.coef_
@@ -110,10 +122,11 @@ for c, df in frames.items():
     equation = " + ".join(terms) + f" + {round(intercept, 3)}"
     st.markdown(f"**{c} Regression Equation (degree {degree}):** `{equation}`")
 
-ax.set_xlabel("Year")
-ax.set_ylabel(category)
-ax.legend()
-st.pyplot(fig)
+if plt:
+    ax.set_xlabel("Year")
+    ax.set_ylabel(category)
+    ax.legend()
+    st.pyplot(fig)
 
 st.subheader("📈 Function Analysis & Conjectures")
 st.write("""
@@ -123,11 +136,6 @@ This helps connect mathematical models with **real-world context** and national 
 """)
 
 st.subheader("🔮 Prediction & Extrapolation")
-st.write("""
-A prediction of a function output value must be given for an input value **beyond the data set** — this is called **extrapolation**.  
-When describing changes or growth, use **proper units** (for example: *“The population increases at a rate of 2 million people per year around 1990.”*).
-""")
-
 pred_year = st.number_input("Enter a year to predict:", min_value=1950, max_value=2100, value=2035)
 for c, df in frames.items():
     X = df["year"].values.reshape(-1, 1)
@@ -150,20 +158,6 @@ if y2 > y1:
         val2 = model.predict(poly.transform([[y2]]))[0]
         avg_rate = (val2 - val1) / (y2 - y1)
         st.write(f"The average rate of change for {c} between {y1}-{y2} is approximately **{round(avg_rate, 2)} units per year**.")
-
-st.subheader("🇺🇸 Latin Groups in the U.S. (Illustrative)")
-compare_us = st.checkbox("Show comparison with Latin groups in the U.S.")
-if compare_us:
-    fig2, ax2 = plt.subplots()
-    years = np.arange(1955, 2025)
-    for g, vals in us_groups.items():
-        ax2.plot(years, vals, label=g)
-    ax2.legend()
-    ax2.set_xlabel("Year")
-    ax2.set_ylabel("Index Value")
-    st.pyplot(fig2)
-
-st.download_button("🖨️ Download Printer-Friendly Report", "Analysis report goes here", file_name="report.txt")
 
 st.markdown("---")
 st.markdown("""
