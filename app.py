@@ -4,178 +4,154 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
-import wbdata
+from sklearn.pipeline import make_pipeline
 import datetime
 
-st.set_page_config(page_title="Latin America Regression Explorer", layout="wide")
-st.title("📊 Latin America Regression Explorer")
-st.write("Analyze historical Latin American data with polynomial regression and function analysis.\n**By Racely Ortega**")
+st.set_page_config(layout="wide", page_title="Latin Countries Regression Explorer")
 
-# --------------------------
-# CONFIG
-# --------------------------
-latin_countries = {
-    "Brazil": "BRA",
-    "Mexico": "MEX",
-    "Argentina": "ARG"
+AUTHOR = "By Racely Ortega"
+
+# -----------------------------
+# Categories and CSV file map
+# -----------------------------
+DATA_FILES = {
+    "Population": "data/population.csv",
+    "Unemployment rate": "data/unemployment.csv",
+    "Education (0–25 scale)": "data/education.csv",
+    "Life expectancy": "data/life_expectancy.csv",
+    "Average wealth": "data/wealth.csv",
+    "Average income": "data/income.csv",
+    "Birth rate": "data/birth_rate.csv",
+    "Immigration": "data/immigration.csv",
+    "Murder rate": "data/murder_rate.csv",
 }
 
-indicators = {
-    "Population": "SP.POP.TOTL",
-    "Unemployment rate": "SL.UEM.TOTL.ZS",
-    "Education levels (0-25)": "SE.SEC.CUAT.UP.ZS",  # proxy
-    "Life expectancy": "SP.DYN.LE00.IN",
-    "Average wealth": "NY.GNP.PCAP.CD",
-    "Average income": "NY.GDP.PCAP.CD",
-    "Birth rate": "SP.DYN.CBRT.IN",
-    "Immigration out of the country": "SM.POP.NETM",
-    "Murder Rate": "VC.IHR.PSRC.P5"
-}
+COUNTRIES = ["Argentina","Brazil","Chile","Colombia","Costa Rica",
+             "Mexico","Panama","Peru","Uruguay","Guyana"]
 
-# Synthetic US Latin group data (illustrative)
-us_groups = {
-    "Mexican-Americans": np.random.randint(50, 90, 70),
-    "Puerto Ricans": np.random.randint(55, 85, 70),
-    "Cuban-Americans": np.random.randint(60, 95, 70)
-}
+# -----------------------------
+# Helper functions
+# -----------------------------
+def load_data(category):
+    path = DATA_FILES[category]
+    df = pd.read_csv(path)
+    return df
 
-# --------------------------
-# DATA FETCHING (thread-safe)
-# --------------------------
-def fetch_wb_data(country_code, indicator_code):
-    try:
-        df = wbdata.get_dataframe({indicator_code:'Value'}, country=country_code)
-        df = df.reset_index()
-        df.rename(columns={'date':'Date', indicator_code:'Value'}, inplace=True)
-        df['Year'] = pd.to_datetime(df['Date']).dt.year
-        current_year = datetime.datetime.now().year
-        df = df[df['Year'] >= current_year - 70]
-        df = df.sort_values("Year")
-        df = df.dropna()
-        if len(df) < 30:  # not enough data
-            return None
-        return df[['Year','Value']]
-    except:
-        return None
+def poly_fit(years, values, degree):
+    mask = ~np.isnan(values)
+    x = np.array(years)[mask].reshape(-1,1)
+    y = np.array(values)[mask]
+    if len(x) < degree+1:
+        return None, None
+    model = make_pipeline(PolynomialFeatures(degree, include_bias=True), LinearRegression())
+    model.fit(x, y)
+    coefs = np.polyfit(x.flatten(), y, degree)
+    p = np.poly1d(coefs)
+    return p, coefs
 
-# --------------------------
-# UI: Selection
-# --------------------------
-category = st.selectbox("Select data category:", list(indicators.keys()))
-countries = st.multiselect("Select countries to analyze:", list(latin_countries.keys()), default=list(latin_countries.keys()))
-degree = st.slider("Select polynomial regression degree:", 3, 8, 3)
-increment = st.slider("Graph increments (years):", 1, 10, 1)
-extrapolate_years = st.slider("Extrapolate into future (years):", 0, 50, 10)
+def format_equation(coefs):
+    terms = []
+    degree = len(coefs)-1
+    for i, c in enumerate(coefs):
+        power = degree - i
+        if abs(c) < 1e-12:
+            continue
+        coeff = f"{c:.6g}"
+        if power == 0:
+            terms.append(f"{coeff}")
+        elif power == 1:
+            terms.append(f"{coeff}*x")
+        else:
+            terms.append(f"{coeff}*x**{power}")
+    return "f(x) = " + " + ".join(terms)
 
-# --------------------------
-# FETCH DATA
-# --------------------------
-frames = {}
-for c in countries:
-    df = fetch_wb_data(latin_countries[c], indicators[category])
-    if df is not None:
-        df.rename(columns={'Value': category}, inplace=True)
-        frames[c] = df
-    else:
-        st.warning(f"No sufficient data for {c} - skipped.")
+# -----------------------------
+# Sidebar Controls
+# -----------------------------
+st.sidebar.header("Controls")
+category = st.sidebar.selectbox("Select Category", list(DATA_FILES.keys()))
+degree = st.sidebar.slider("Polynomial Degree", 3, 8, 3)
+start_year = st.sidebar.number_input("Start Year", 1955, 2100, 1955)
+end_year = st.sidebar.number_input("End Year", 1955, 2100, 2024)
+extrapolate_years = st.sidebar.number_input("Extrapolate Years", 0, 50, 10)
+year_increment = st.sidebar.slider("Graph Year Increment", 1, 10, 5)
+compare_countries = st.sidebar.multiselect("Select Countries", COUNTRIES, default=COUNTRIES[:3])
 
-if not frames:
-    st.error("No countries have enough data for this category.")
-    st.stop()
+interpolation_year = st.sidebar.number_input("Interpolate/Extrapolate Value Year", start_year, end_year+extrapolate_years, start_year)
+roc_start_year = st.sidebar.number_input("Rate of Change Start Year", start_year, end_year, start_year)
+roc_end_year = st.sidebar.number_input("Rate of Change End Year", start_year, end_year, end_year)
 
-# --------------------------
-# Editable Table (first country)
-# --------------------------
-st.subheader("Raw Data Table (Editable)")
-first_country = list(frames.keys())[0]
-edited_df = st.data_editor(frames[first_country], num_rows="dynamic")
-st.write("Inputs: Year | Outputs:", category)
+# -----------------------------
+# Load Data
+# -----------------------------
+df = load_data(category)
+df = df[df['country'].isin(compare_countries)]
+df = df[(df['year'] >= start_year) & (df['year'] <= end_year)]
 
-# --------------------------
-# Regression and Plotting
-# --------------------------
-fig, ax = plt.subplots(figsize=(10,6))
+st.subheader("Raw Data (Editable)")
+edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+df = edited_df.copy()
 
-for c, df in frames.items():
-    X = df["Year"].values.reshape(-1,1)
-    y = df[category].values
-    poly = PolynomialFeatures(degree=degree)
-    X_poly = poly.fit_transform(X)
-    model = LinearRegression().fit(X_poly, y)
+# -----------------------------
+# Regression & Plotting
+# -----------------------------
+st.subheader("Regression & Analysis")
+fig, ax = plt.subplots(figsize=(12,6))
+results = []
 
-    # Prediction + extrapolation
-    years = np.arange(df["Year"].min(), df["Year"].max()+extrapolate_years+1, increment).reshape(-1,1)
-    preds = model.predict(poly.transform(years))
+for country in compare_countries:
+    df_c = df[df['country']==country].sort_values('year')
+    years = df_c['year'].values
+    values = df_c['value'].values
 
-    # Scatter & curve
-    ax.scatter(X, y, label=f"{c} data")
-    ax.plot(years, preds, label=f"{c} regression", linestyle='--' if extrapolate_years>0 else '-')
+    p, coefs = poly_fit(years, values, degree)
+    if p is None:
+        st.warning(f"Not enough data points for {country}.")
+        continue
 
-    # Regression equation
-    coefs = model.coef_
-    intercept = model.intercept_
-    terms = [f"{round(coefs[i],2)}*x^{i}" for i in range(len(coefs))]
-    equation = " + ".join(terms) + f" + {round(intercept,2)}"
-    st.markdown(f"**{c} Regression Equation (degree {degree}):** {equation}")
+    # Scatter plot
+    ax.scatter(years, values, label=f"{country} data")
+
+    # Fit line
+    x_fit = np.arange(start_year, end_year+1)
+    y_fit = p(x_fit)
+    ax.plot(x_fit, y_fit, label=f"{country} fit")
+
+    # Extrapolation
+    if extrapolate_years > 0:
+        x_ext = np.arange(end_year+1, end_year+extrapolate_years+1)
+        y_ext = p(x_ext)
+        ax.plot(x_ext, y_ext, linestyle="--", label=f"{country} projection")
+
+    results.append({
+        'country': country,
+        'equation': format_equation(coefs),
+        'poly': p
+    })
 
 ax.set_xlabel("Year")
 ax.set_ylabel(category)
+ax.set_title(f"{category} Regression (Degree {degree})")
 ax.legend()
+plt.xticks(np.arange(start_year, end_year+extrapolate_years+1, year_increment), rotation=45)
 st.pyplot(fig)
 
-# --------------------------
-# Function Analysis (simplified)
-# --------------------------
-st.subheader("Function Analysis & Conjectures")
-st.write("Analyzing maxima, minima, increasing/decreasing trends, domain, and range...")
-st.info("Example: The population of Brazil reached a local maximum on 11/2/2017. The population was growing fastest in the 1960s due to economic expansion...")
+# -----------------------------
+# Function Analysis
+# -----------------------------
+st.subheader("Function Analysis")
+for res in results:
+    st.markdown(f"### {res['country']}")
+    st.markdown(f"**Equation:** `{res['equation']}`")
 
-# --------------------------
-# Interpolation/Extrapolation Prediction
-# --------------------------
-st.subheader("Prediction / Interpolation / Extrapolation")
-pred_year = st.number_input("Enter year to predict:", min_value=1950, max_value=2100, value=2035)
-for c, df in frames.items():
-    X = df["Year"].values.reshape(-1,1)
-    y = df[category].values
-    poly = PolynomialFeatures(degree=degree)
-    model = LinearRegression().fit(poly.fit_transform(X), y)
-    pred = model.predict(poly.transform([[pred_year]]))[0]
-    st.write(f"In {pred_year}, predicted {category} for {c}: {round(pred,2)}")
+    # Interpolation/Extrapolation
+    val = res['poly'](interpolation_year)
+    st.write(f"Value at year {interpolation_year}: {val:.2f}")
 
-# --------------------------
-# Average rate of change
-# --------------------------
-st.subheader("Average Rate of Change")
-y1 = st.number_input("Start year:", min_value=1950, max_value=2100, value=1960)
-y2 = st.number_input("End year:", min_value=1950, max_value=2100, value=2020)
-if y2 > y1:
-    for c, df in frames.items():
-        X = df["Year"].values.reshape(-1,1)
-        y = df[category].values
-        poly = PolynomialFeatures(degree=degree)
-        model = LinearRegression().fit(poly.fit_transform(X), y)
-        val1 = model.predict(poly.transform([[y1]]))[0]
-        val2 = model.predict(poly.transform([[y2]]))[0]
-        avg_rate = (val2 - val1)/(y2-y1)
-        st.write(f"Avg rate of change for {c} between {y1}-{y2}: {round(avg_rate,2)} units/year")
+    # Average rate of change
+    y1 = res['poly'](roc_start_year)
+    y2 = res['poly'](roc_end_year)
+    roc = (y2 - y1) / (roc_end_year - roc_start_year)
+    st.write(f"Average rate of change from {roc_start_year} to {roc_end_year}: {roc:.2f} per year")
 
-# --------------------------
-# US Latin Groups Comparison
-# --------------------------
-st.subheader("US Latin Groups (Illustrative)")
-show_us = st.checkbox("Compare with Latin groups in the US")
-if show_us:
-    fig2, ax2 = plt.subplots()
-    years = np.arange(1955,2025)
-    for g, vals in us_groups.items():
-        ax2.plot(years, vals, label=g)
-    ax2.set_xlabel("Year")
-    ax2.set_ylabel("Index Value")
-    ax2.legend()
-    st.pyplot(fig2)
-
-# --------------------------
-# Printer-friendly download
-# --------------------------
-st.download_button("Download Printer-Friendly Report", "Analysis report goes here", file_name="report.txt")
+st.markdown(f"---\n{AUTHOR}")
