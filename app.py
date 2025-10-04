@@ -181,4 +181,20 @@ us_groups = {
 compare_us = st.checkbox("Show comparison with US Latin groups")
 if compare_us:
     fig2, ax2 = plt.subplots(figsize=(12,5))
-    for g, vals in us
+    for g, vals in us_groups.items():
+        ax2.plot(years, vals, label=g)
+    ax2.set_xlabel("Year")
+    ax2.set_ylabel("Index Value")
+    ax2.legend()
+    st.pyplot(fig2)
+
+# --------------------------
+# Printer-Friendly Report
+# --------------------------
+st.subheader("🖨️ Printer-Friendly Report")
+report_text = "Latin America Regression Analysis\nBy Racely Ortega\n\n"
+for c, res in analysis_results.items():
+    report_text += f"{c}:\n"
+    report_text += f"Equation: {res['model'].coef_} + {res['model'].intercept_}\n"
+st.text_area("Report Preview", value=report_text, height=200)
+st.download_button("Download Report", data=report_text, file_name="report.txt")
