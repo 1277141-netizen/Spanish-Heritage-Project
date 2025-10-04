@@ -7,10 +7,11 @@ from sklearn.linear_model import LinearRegression
 
 st.set_page_config(page_title="Latin America Regression Explorer", layout="wide")
 st.title("📊 Latin America Regression Explorer")
+st.write("Analyze historical Latin American data with polynomial regression and function analysis.")
 st.write("**By Racely Ortega**")
 
 # --------------------------
-# Sample Data (can be expanded)
+# Sample Data (replace with real data if available)
 # --------------------------
 years = np.arange(1960, 2021, 5)
 categories = ["Population", "Unemployment rate", "Education levels", "Life expectancy",
@@ -52,13 +53,13 @@ data_samples = {
         "Birth rate": [28,27,26,25,24,23,22,21,20,19,18,17,16],
         "Immigration out": [0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7],
         "Murder Rate": [15,14,13,12,11,10,9,8,7,6,5,4,3]
-    }),
+    })
 }
 
 # --------------------------
-# User selection
+# User Selection
 # --------------------------
-category = st.selectbox("Select a category:", categories)
+category = st.selectbox("Select a data category:", categories)
 degree = st.slider("Polynomial degree:", 3, 8, 3)
 increment = st.slider("Graph increments (years):", 1, 10, 1)
 extrapolate_years = st.slider("Extrapolate future years:", 0, 20, 5)
@@ -70,77 +71,36 @@ countries = st.multiselect("Select countries:", list(data_samples.keys()), defau
 st.subheader("📋 Raw Data")
 for idx, c in enumerate(countries):
     st.write(f"### {c}")
-    df = data_samples[c]
-    if category not in df.columns:
-        st.warning(f"No data for {category} in {c}.")
-    else:
-        st.data_editor(df[["Year", category]], key=f"data_{idx}_{c}")
+    st.data_editor(data_samples[c][["Year", category]], key=f"data_{idx}_{c}")
 
 # --------------------------
-# Global year range
+# Regression & Plots
 # --------------------------
-all_years = np.concatenate([data_samples[c]["Year"].values for c in countries])
-min_year = all_years.min()
-max_year = all_years.max()
-years_plot = np.arange(min_year, max_year + extrapolate_years + 1, increment)
-
-# --------------------------
-# Regression, Plot, Analysis
-# --------------------------
-st.subheader("📈 Regression, Function Analysis & Predictions")
-fig, ax = plt.subplots(figsize=(12,6))
+st.subheader("📈 Regression Plot")
+fig, ax = plt.subplots(figsize=(10,6))
 analysis_results = {}
-
 for c in countries:
     df = data_samples[c]
-    if category not in df.columns:
-        continue
-
     X = df["Year"].values.reshape(-1,1)
     y = df[category].values
     poly = PolynomialFeatures(degree=degree)
     X_poly = poly.fit_transform(X)
     model = LinearRegression().fit(X_poly, y)
-
-    # Regression curve
+    
+    years_plot = np.arange(df["Year"].min(), df["Year"].max()+extrapolate_years+1, increment)
     X_plot = poly.transform(years_plot.reshape(-1,1))
     y_plot = model.predict(X_plot)
-    ax.scatter(X.flatten(), y, label=f"{c} data")
+    
+    ax.scatter(df["Year"], y, label=f"{c} data")
     ax.plot(years_plot, y_plot, label=f"{c} regression")
-
-    # Regression equation
+    
     coefs = model.coef_
     intercept = model.intercept_
     terms = [f"{round(coefs[i],2)}*x^{i}" for i in range(len(coefs))]
     equation = " + ".join(terms) + f" + {round(intercept,2)}"
     st.markdown(f"**{c} Regression Equation:** {equation}")
-
-    # Function analysis
-    dy = np.gradient(y_plot, years_plot)
-    max_idx = np.argmax(y_plot)
-    min_idx = np.argmin(y_plot)
-    fast_inc_idx = np.argmax(dy)
-    fast_dec_idx = np.argmin(dy)
-    domain = (years_plot.min(), years_plot.max())
-    range_vals = (y_plot.min(), y_plot.max())
-
-    # Safe check for increasing/decreasing periods
-    inc_years = years_plot[dy > 0]
-    dec_years = years_plot[dy < 0]
-
-    st.markdown(f"**Function Analysis for {c}:**")
-    st.write(f"- Local maximum: {y_plot[max_idx]:.2f} in {years_plot[max_idx]}")
-    st.write(f"- Local minimum: {y_plot[min_idx]:.2f} in {years_plot[min_idx]}")
-    st.write(f"- Increasing years: {inc_years[0]} to {inc_years[-1]}" if len(inc_years)>0 else "- Increasing years: None")
-    st.write(f"- Decreasing years: {dec_years[0]} to {dec_years[-1]}" if len(dec_years)>0 else "- Decreasing years: None")
-    st.write(f"- Fastest increase: {dy[fast_inc_idx]:.2f} per year in {years_plot[fast_inc_idx]}")
-    st.write(f"- Fastest decrease: {dy[fast_dec_idx]:.2f} per year in {years_plot[fast_dec_idx]}")
-    st.write(f"- Domain: {domain}")
-    st.write(f"- Range: {range_vals}")
-    st.write(f"- Conjecture: Significant changes in {c} may be due to economic, social, or political shifts during these years.")
-
-    # Save model for predictions
-    analysis_results[c] = {"model":model, "poly":poly, "years":years_plot, "y_pred":y_plot, "X":X, "y":y}
+    
+    analysis_results[c] = {"model":model, "poly":poly, "years":years_plot}
 
 ax.set_xlabel("Year")
 ax.set_ylabel(category)
@@ -148,53 +108,82 @@ ax.legend()
 st.pyplot(fig)
 
 # --------------------------
-# Predictions / Interpolation / Extrapolation
+# Function Analysis
 # --------------------------
-st.subheader("🔮 Predictions")
-pred_year = st.number_input("Enter a year to predict:", min_value=1950, max_value=2100, value=2030)
-for c, res in analysis_results.items():
-    pred_val = res["model"].predict(res["poly"].transform([[pred_year]]))[0]
-    st.write(f"In {pred_year}, predicted {category} for {c}: {pred_val:.2f}")
+st.subheader("🔍 Function Analysis")
+for c in countries:
+    model = analysis_results[c]["model"]
+    poly = analysis_results[c]["poly"]
+    years_arr = analysis_results[c]["years"]
+    X_pred = poly.transform(years_arr.reshape(-1,1))
+    y_pred = model.predict(X_pred)
+    dy = np.gradient(y_pred, years_arr)
+    
+    max_idx = np.argmax(y_pred)
+    min_idx = np.argmin(y_pred)
+    max_growth_idx = np.argmax(dy)
+    max_decline_idx = np.argmin(dy)
+    
+    inc_years = years_arr[dy>0]
+    dec_years = years_arr[dy<0]
+    
+    st.write(f"### {c}")
+    st.write(f"- Local maximum: {round(y_pred[max_idx],2)} at {years_arr[max_idx]}")
+    st.write(f"- Local minimum: {round(y_pred[min_idx],2)} at {years_arr[min_idx]}")
+    st.write(f"- Increasing years: {inc_years[0]} to {inc_years[-1]}" if len(inc_years)>0 else "- Increasing years: None")
+    st.write(f"- Decreasing years: {dec_years[0]} to {dec_years[-1]}" if len(dec_years)>0 else "- Decreasing years: None")
+    st.write(f"- Fastest growth: {round(dy[max_growth_idx],2)} units/year at {years_arr[max_growth_idx]}")
+    st.write(f"- Fastest decline: {round(dy[max_decline_idx],2)} units/year at {years_arr[max_decline_idx]}")
+    st.write(f"- Domain: {years_arr[0]} to {years_arr[-1]}")
+    st.write(f"- Range: {round(min(y_pred),2)} to {round(max(y_pred),2)}")
+    st.write(f"- Conjecture: Significant changes may relate to economic or social events affecting {c} during the period.\n")
+    
+# --------------------------
+# Prediction / Interpolation / Extrapolation
+# --------------------------
+st.subheader("🔮 Predict Year Value")
+pred_year = st.number_input("Enter year to predict:", min_value=1950, max_value=2100, value=2030)
+for c in countries:
+    model = analysis_results[c]["model"]
+    poly = analysis_results[c]["poly"]
+    pred_val = model.predict(poly.transform([[pred_year]]))[0]
+    st.write(f"In {pred_year}, predicted {category} for {c}: {round(pred_val,2)} units")
 
 # --------------------------
 # Average Rate of Change
 # --------------------------
 st.subheader("📐 Average Rate of Change")
-y1 = st.number_input("Start year:", min_value=int(min_year), max_value=int(max_year), value=int(min_year))
-y2 = st.number_input("End year:", min_value=int(min_year), max_value=int(max_year+extrapolate_years), value=int(max_year))
-if y2 > y1:
-    for c, res in analysis_results.items():
-        val1 = res["model"].predict(res["poly"].transform([[y1]]))[0]
-        val2 = res["model"].predict(res["poly"].transform([[y2]]))[0]
+y1 = st.number_input("Start year:", min_value=1950, max_value=2100, value=1960, key="start")
+y2 = st.number_input("End year:", min_value=1950, max_value=2100, value=2020, key="end")
+if y2>y1:
+    for c in countries:
+        model = analysis_results[c]["model"]
+        poly = analysis_results[c]["poly"]
+        val1 = model.predict(poly.transform([[y1]]))[0]
+        val2 = model.predict(poly.transform([[y2]]))[0]
         avg_rate = (val2 - val1)/(y2 - y1)
-        st.write(f"Avg rate of change for {c} between {y1}-{y2}: {avg_rate:.2f} units/year")
+        st.write(f"Avg rate of change for {c} between {y1}-{y2}: {round(avg_rate,2)} units/year")
 
 # --------------------------
-# US Latin Groups Comparison (illustrative)
+# US Latin Groups Comparison
 # --------------------------
-st.subheader("🇺🇸 Latin Groups in the US")
+st.subheader("🇺🇸 US Latin Groups Comparison (Illustrative)")
 us_groups = {
-    "Mexican-Americans": np.random.randint(50, 90, len(years)),
-    "Puerto Ricans": np.random.randint(55, 85, len(years)),
-    "Cuban-Americans": np.random.randint(60, 95, len(years)),
+    "Mexican-Americans": np.random.randint(50,90,len(years)),
+    "Puerto Ricans": np.random.randint(55,85,len(years)),
+    "Cuban-Americans": np.random.randint(60,95,len(years)),
 }
-compare_us = st.checkbox("Show comparison with US Latin groups")
-if compare_us:
-    fig2, ax2 = plt.subplots(figsize=(12,5))
-    for g, vals in us_groups.items():
-        ax2.plot(years, vals, label=g)
-    ax2.set_xlabel("Year")
-    ax2.set_ylabel("Index Value")
-    ax2.legend()
-    st.pyplot(fig2)
+fig2, ax2 = plt.subplots(figsize=(10,5))
+for g,v in us_groups.items():
+    ax2.plot(years, v, label=g)
+ax2.set_xlabel("Year")
+ax2.set_ylabel("Index Value")
+ax2.legend()
+st.pyplot(fig2)
 
 # --------------------------
 # Printer-Friendly Report
 # --------------------------
 st.subheader("🖨️ Printer-Friendly Report")
-report_text = "Latin America Regression Analysis\nBy Racely Ortega\n\n"
-for c, res in analysis_results.items():
-    report_text += f"{c}:\n"
-    report_text += f"Equation: {res['model'].coef_} + {res['model'].intercept_}\n"
-st.text_area("Report Preview", value=report_text, height=200)
-st.download_button("Download Report", data=report_text, file_name="report.txt")
+report_text = "Regression analysis, function analysis, predictions, and plots.\nBy Racely Ortega"
+st.download_button("Download Report", report_text, file_name="report.txt")
