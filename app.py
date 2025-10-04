@@ -9,6 +9,9 @@ from sklearn.linear_model import LinearRegression
 
 st.set_page_config(page_title="Latin America Regression Explorer", layout="wide")
 
+st.title("📊 Latin America Regression Explorer")
+st.write("Analyze historical Latin American data with polynomial regression and function analysis.\n**By Racely Ortega**")
+
 # --------------------------------
 # CONFIG
 # --------------------------------
@@ -25,7 +28,6 @@ latin_countries = {
     "Dominican Republic": "DOM",
 }
 
-# World Bank indicators (proxy mappings)
 indicators = {
     "Population": "SP.POP.TOTL",
     "Unemployment rate": "SL.UEM.TOTL.ZS",
@@ -45,44 +47,41 @@ us_groups = {
     "Cuban-Americans": np.random.randint(60, 95, 70),
 }
 
-
 # --------------------------------
 # FETCH HISTORICAL DATA
 # --------------------------------
 @st.cache_data
-def get_wb_data(country_code, indicator_code):
-    start_date = datetime.datetime(1955, 1, 1)
-    end_date = datetime.datetime(2025, 1, 1)
-    df = wbdata.get_dataframe(
-        {indicator_code: indicator_code},
-        country=country_code,
-        data_date=(start_date, end_date),
-        convert_date=True,
-    )
-    df.reset_index(inplace=True)
-    df["year"] = df["date"].dt.year
-    df = df.sort_values("year")
-    df = df.dropna()
-    return df[["year", indicator_code]]
-
+def get_wb_data_fixed(country_code, indicator_code):
+    try:
+        df = wbdata.get_dataframe({indicator_code: 'Value'}, country=country_code)
+        df = df.reset_index()
+        df.rename(columns={'date':'Date', indicator_code:'Value'}, inplace=True)
+        df['Year'] = pd.to_datetime(df['Date']).dt.year
+        current_year = datetime.datetime.now().year
+        df = df[df['Year'] >= current_year - 70]
+        df = df.sort_values("Year")
+        df = df.dropna()
+        return df[['Year', 'Value']]
+    except Exception as e:
+        st.error(f"Error fetching data for {country_code}: {e}")
+        return None
 
 # --------------------------------
 # UI
 # --------------------------------
-st.title("📊 Latin America Regression Explorer")
-
 category = st.selectbox("Select a data category:", list(indicators.keys()))
 countries = st.multiselect("Select countries to analyze:", list(latin_countries.keys()), default=["Brazil"])
 
 # Fetch data
 frames = {}
 for c in countries:
-    df = get_wb_data(latin_countries[c], indicators[category])
-    df.rename(columns={indicators[category]: category}, inplace=True)
-    frames[c] = df
+    df = get_wb_data_fixed(latin_countries[c], indicators[category])
+    if df is not None and not df.empty:
+        df.rename(columns={'Value': category}, inplace=True)
+        frames[c] = df
 
-# Editable table (for first selected country only)
-if countries:
+# Editable table (first selected country)
+if countries and frames:
     st.subheader("Raw Data (Editable)")
     edited_df = st.data_editor(frames[countries[0]], num_rows="dynamic")
     st.write("Inputs: year | Outputs:", category)
@@ -94,24 +93,19 @@ extrapolate_years = st.slider("Extrapolate into the future (years):", 0, 50, 10)
 
 # Plot
 fig, ax = plt.subplots(figsize=(10, 6))
-
 for c, df in frames.items():
-    X = df["year"].values.reshape(-1, 1)
+    X = df["Year"].values.reshape(-1,1)
     y = df[category].values
-
     poly = PolynomialFeatures(degree=degree)
     X_poly = poly.fit_transform(X)
     model = LinearRegression().fit(X_poly, y)
 
     # Fit line
-    years = np.arange(df["year"].min(), df["year"].max() + extrapolate_years, increment).reshape(-1, 1)
-    years_poly = poly.transform(years)
-    preds = model.predict(years_poly)
+    years = np.arange(df["Year"].min(), df["Year"].max()+extrapolate_years+1, increment).reshape(-1,1)
+    preds = model.predict(poly.transform(years))
 
-    # Scatter
-    ax.scatter(df["year"], y, label=f"{c} data")
-
-    # Regression curve
+    # Scatter & regression
+    ax.scatter(df["Year"], y, label=f"{c} data")
     ax.plot(years, preds, label=f"{c} regression")
 
     # Equation
@@ -135,7 +129,7 @@ st.info("Example: The population of Brazil reached a local maximum in 2017. The 
 st.subheader("🔮 Prediction & Interpolation/Extrapolation")
 pred_year = st.number_input("Enter a year to predict:", min_value=1950, max_value=2100, value=2035)
 for c, df in frames.items():
-    X = df["year"].values.reshape(-1, 1)
+    X = df["Year"].values.reshape(-1,1)
     y = df[category].values
     poly = PolynomialFeatures(degree=degree)
     model = LinearRegression().fit(poly.fit_transform(X), y)
@@ -148,13 +142,13 @@ y1 = st.number_input("Start year:", min_value=1950, max_value=2100, value=1960)
 y2 = st.number_input("End year:", min_value=1950, max_value=2100, value=2020)
 if y2 > y1:
     for c, df in frames.items():
-        X = df["year"].values.reshape(-1, 1)
+        X = df["Year"].values.reshape(-1,1)
         y = df[category].values
         poly = PolynomialFeatures(degree=degree)
         model = LinearRegression().fit(poly.fit_transform(X), y)
         val1 = model.predict(poly.transform([[y1]]))[0]
         val2 = model.predict(poly.transform([[y2]]))[0]
-        avg_rate = (val2 - val1) / (y2 - y1)
+        avg_rate = (val2 - val1)/(y2-y1)
         st.write(f"Avg rate of change for {c} between {y1}-{y2}: {round(avg_rate,2)} units/year")
 
 # US Latin group comparison
