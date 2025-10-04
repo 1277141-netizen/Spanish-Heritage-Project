@@ -10,13 +10,12 @@ st.title("📊 Latin America Regression Explorer")
 st.write("**By Racely Ortega**")
 
 # --------------------------
-# Sample Data
+# Sample Data (can be expanded)
 # --------------------------
 years = np.arange(1960, 2021, 5)
 categories = ["Population", "Unemployment rate", "Education levels", "Life expectancy",
               "Average wealth", "Average income", "Birth rate", "Immigration out", "Murder Rate"]
 
-# Minimal example data for all countries
 data_samples = {
     "Brazil": pd.DataFrame({
         "Year": years,
@@ -54,7 +53,6 @@ data_samples = {
         "Immigration out": [0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7],
         "Murder Rate": [15,14,13,12,11,10,9,8,7,6,5,4,3]
     }),
-    # You can continue adding all other Latin countries, filling with placeholder/sparse data if needed
 }
 
 # --------------------------
@@ -97,6 +95,7 @@ for c in countries:
     df = data_samples[c]
     if category not in df.columns:
         continue
+
     X = df["Year"].values.reshape(-1,1)
     y = df[category].values
     poly = PolynomialFeatures(degree=degree)
@@ -120,22 +119,27 @@ for c in countries:
     dy = np.gradient(y_plot, years_plot)
     max_idx = np.argmax(y_plot)
     min_idx = np.argmin(y_plot)
-    fast_inc = np.argmax(dy)
-    fast_dec = np.argmin(dy)
+    fast_inc_idx = np.argmax(dy)
+    fast_dec_idx = np.argmin(dy)
     domain = (years_plot.min(), years_plot.max())
     range_vals = (y_plot.min(), y_plot.max())
+
+    # Safe check for increasing/decreasing periods
+    inc_years = years_plot[dy > 0]
+    dec_years = years_plot[dy < 0]
 
     st.markdown(f"**Function Analysis for {c}:**")
     st.write(f"- Local maximum: {y_plot[max_idx]:.2f} in {years_plot[max_idx]}")
     st.write(f"- Local minimum: {y_plot[min_idx]:.2f} in {years_plot[min_idx]}")
-    st.write(f"- Increasing years: {years_plot[dy>0][0]} to {years_plot[dy>0][-1]}")
-    st.write(f"- Decreasing years: {years_plot[dy<0][0]} to {years_plot[dy<0][-1]}")
-    st.write(f"- Fastest increase: {dy[fast_inc]:.2f} per year in {years_plot[fast_inc]}")
-    st.write(f"- Fastest decrease: {dy[fast_dec]:.2f} per year in {years_plot[fast_dec]}")
+    st.write(f"- Increasing years: {inc_years[0]} to {inc_years[-1]}" if len(inc_years)>0 else "- Increasing years: None")
+    st.write(f"- Decreasing years: {dec_years[0]} to {dec_years[-1]}" if len(dec_years)>0 else "- Decreasing years: None")
+    st.write(f"- Fastest increase: {dy[fast_inc_idx]:.2f} per year in {years_plot[fast_inc_idx]}")
+    st.write(f"- Fastest decrease: {dy[fast_dec_idx]:.2f} per year in {years_plot[fast_dec_idx]}")
     st.write(f"- Domain: {domain}")
     st.write(f"- Range: {range_vals}")
-    st.write(f"- Conjecture: Significant changes may be due to economic or social shifts in {c}.")
+    st.write(f"- Conjecture: Significant changes in {c} may be due to economic, social, or political shifts during these years.")
 
+    # Save model for predictions
     analysis_results[c] = {"model":model, "poly":poly, "years":years_plot, "y_pred":y_plot, "X":X, "y":y}
 
 ax.set_xlabel("Year")
@@ -177,20 +181,4 @@ us_groups = {
 compare_us = st.checkbox("Show comparison with US Latin groups")
 if compare_us:
     fig2, ax2 = plt.subplots(figsize=(12,5))
-    for g, vals in us_groups.items():
-        ax2.plot(years, vals, label=g)
-    ax2.set_xlabel("Year")
-    ax2.set_ylabel("Index Value")
-    ax2.legend()
-    st.pyplot(fig2)
-
-# --------------------------
-# Printer-Friendly Report
-# --------------------------
-st.subheader("🖨️ Printer-Friendly Report")
-report_text = "Latin America Regression Analysis\nBy Racely Ortega\n\n"
-for c, res in analysis_results.items():
-    report_text += f"{c}:\n"
-    report_text += f"Equation: {res['model'].coef_} \n"
-report_file = st.text_area("Report Preview", value=report_text, height=200)
-st.download_button("Download Report", data=report_text, file_name="report.txt")
+    for g, vals in us
